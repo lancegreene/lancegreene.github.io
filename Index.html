@@ -1,0 +1,576 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="initial-scale=1, maximum-scale=1,user-scalable=no" />
+
+    <title>!Ohio Hexbin! - new branch</title>
+
+
+    <link rel="stylesheet" href="https://js.arcgis.com/next/esri/themes/light/main.css" />
+    <script
+        type="module"
+        src="https://unpkg.com/@esri/calcite-components@1.0.0-next.280/dist/calcite/calcite.esm.js"
+    ></script>
+    <link
+    rel="stylesheet"
+    type="text/css"
+    href="https://unpkg.com/@esri/calcite-components@1.0.0-next.280/dist/calcite/calcite.css"
+    />
+    <style>
+        body { margin: 0; padding: 0; }
+        #viewDiv { position: absolute; top: 0; bottom: 0; width: 100%; }
+        .tabs {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            width: 400px;
+            z-index: 1;
+            background: #fff;
+            border: 1px solid #a1a1a1;
+            padding: 10px;
+        }
+        .tab-header {
+            display: flex;
+            cursor: pointer;
+            margin-bottom: 10px;
+        }
+        .tab-header div {
+            flex: 1;
+            padding: 10px;
+            text-align: center;
+            background: #eee;
+            border: 1px solid #ccc;
+            border-bottom: none;
+        }
+        .tab-header div.active {
+            background: #fff;
+            font-weight: bold;
+        }
+        .tab-content {
+            display: none;
+        }
+        .tab-content.active {
+            display: block;
+        }
+        .button-container, .dist-button-container, .measure-container, .listing-group {
+            margin-top: 10px;
+            display: inline-block;
+        }
+        .generate-button {
+            margin-top: 10px;
+            display: block;
+        }
+        .distance-container {
+            margin-top: 10px;
+        }
+        /*#features {
+            position: absolute;
+            top: 550px;
+            right: 10px;
+            bottom: 0;
+            width: 28%;
+            height: 28%;
+            overflow: auto;
+            background: rgba(255, 255, 255, 0.8);
+            border: 1px solid black;
+        }*/
+        #toolbarDiv {
+            position: absolute;
+            top: 20px;
+            left: 450px;
+            cursor: default;
+            display: flex;
+            flex-direction: row;
+            flex-wrap: nowrap;
+        }
+        #viewDivload {
+        height: 100%;
+        width: 100%;
+        }
+
+    </style>
+</head>
+<body>
+
+<div id="viewDiv"></div>
+<!--<pre id="features">Feature Info</pre>-->
+<div id="viewDivload">
+    <calcite-loader
+        type="indeterminate"
+        scale="l"
+        value="0"
+        id="loader"
+        role="progressbar"
+        text="Running Near Analysis"
+        label="loader"
+        
+    ></calcite-loader>
+</div>
+<div class="tabs">
+    <div class="tab-header">
+        <div class="tab-link active" data-tab="controls">Hex Bin Generation</div>
+        <div class="tab-link" data-tab="road_dist">Near Analysis</div>
+        <div class="tab-link" data-tab="threshold">Threshold Analysis</div>
+    </div>
+    <div id="controls" class="tab-content active">
+        <div class="button-container">
+            <select id="selectMode" class="select-mode" style="width: 100%; margin-bottom: 10px;">
+                <option value="extent">Generate Hexbins by Map Extent</option>
+                <option value="polygon">Generate Hexbins by Drawing Polygon</option>
+            </select>
+            <input type="number" id="resolutionInput" class="resolution-input" placeholder="Enter resolution (1-15)" min="1" max="15" style="width: 100%; margin-bottom: 10px;">
+            <button class="generate-button" id="generateHexbinsButton" style="width: 100%;">Generate Hexbins</button>
+        </div>
+        <div class="measure-container">
+            <div id="distance" class="distance-container"></div>
+        </div>
+        <nav id="listing-group" class="listing-group">
+            <input type="checkbox" id="measureToggle" style="margin-right: 10px;">
+            <label for="measureToggle">Measure Tool</label>
+        </nav>
+    </div>
+    <div id="road_dist" class="tab-content">
+        <h5>Near analysis to calculate the distance to the closest feature in each category</h5>
+        <div class="dist-button-container">
+            <label for="roadselect">Road</label>
+            <input type="checkbox" id="roadselect" name="roadselect" value="Road" checked="true">
+            <label for="railselect">Railroad</label>
+            <input type="checkbox" id="railselect" name="railselect" value="Rail" checked="true">
+            <label for="airportselect">Airport</label>
+            <input type="checkbox" id="airportselect" name="airportselect" value="Airport" checked="true">
+            <button class="generate-button" id="calculateDistanceButton" style="width: 100%;">Run Near Analysis</button>
+        </div>
+    </div>
+    <div id="threshold" class="tab-content">
+        <h4>Recalculate Risk Thresholds</h4>
+        <div class="dist-button-container">
+            <label for="roadInput">Highways: Distance (miles) within</label>
+            <input type="number" id="roadInput" class="distance-input" placeholder="Enter Road Distance Threshold (miles)" min="1" max="1000" style="width: 100%; margin-bottom: 10px;" value="2">
+            <label for="railInput">Railways: Distance (miles) within</label>
+            <input type="number" id="railInput" class="distance-input" placeholder="Enter Rail Distance Threshold (miles)" min="1" max="1000" style="width: 100%; margin-bottom: 10px;" value="1">
+            <label for="airportInput">Airport: Distance (miles) within</label>
+            <input type="number" id="airportInput" class="distance-input" placeholder="Enter Airport Distance Threshold (miles)" min="1" max="1000" style="width: 100%; margin-bottom: 10px;" value="10">
+            <button class="generate-button" id="updateRiskButton" style="width: 100%;">Update Risk Thresholds</button>
+        </div>
+    </div>
+    <div id="toolbarDiv" class="esri-component esri-widget">
+        <button id="distancemeas" class="esri-widget--button esri-interactive esri-icon-measure-line" title="Distance Measurement Tool">
+        </button>
+        <button id="area" class="esri-widget--button esri-interactive esri-icon-measure-area" title="Area Measurement Tool">
+        </button>
+        <button id="clear" class="esri-widget--button esri-interactive esri-icon-trash" title="Clear Measurements">
+        </button>
+      </div>
+</div>
+<script src="https://unpkg.com/h3-js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@turf/turf@6/turf.min.js"></script>
+<script src="https://js.arcgis.com/4.25/"></script>
+<script>
+    require([
+        "esri/Map",
+        "esri/views/MapView",
+        "esri/layers/GraphicsLayer",
+        "esri/Graphic",
+        "esri/geometry/Polygon",
+        "esri/symbols/SimpleFillSymbol",
+        "esri/geometry/support/webMercatorUtils",
+        "esri/widgets/Sketch",
+        "esri/geometry/SpatialReference",
+        "esri/layers/FeatureLayer",
+        "esri/renderers/SimpleRenderer",
+        "esri/symbols/SimpleLineSymbol",
+        "esri/rest/support/Query",
+        "esri/geometry/geometryEngine",
+        "esri/widgets/Measurement",
+        "esri/widgets/Legend",
+        "esri/core/promiseUtils",
+        "esri/core/reactiveUtils",
+        "esri/symbols/SimpleMarkerSymbol",
+
+    ], function(Map, MapView, GraphicsLayer, Graphic, Polygon, SimpleFillSymbol, webMercatorUtils, Sketch, SpatialReference,FeatureLayer,SimpleRenderer, SimpleLineSymbol, Query,geometryEngine, Measurement, Legend, promiseUtils,reactiveUtils,SimpleMarkerSymbol) {
+
+        //loading.active = false;
+        const loader = document.getElementById("loader");
+
+        const map = new Map({
+            basemap: "streets-vector"
+        });
+
+        const view = new MapView({
+            container: "viewDiv",
+            map: map,
+            center: [-82.907123, 40.417287],
+            zoom: 7,
+            popupEnabled: true
+        });
+        // Set the activeView to the 2D MapView
+        let activeView = view;
+
+        const graphicsLayer = new GraphicsLayer();
+        map.add(graphicsLayer);
+
+        const sketchLayer = new GraphicsLayer();
+        map.add(sketchLayer);
+
+        const sketch = new Sketch({
+            layer: sketchLayer,
+            view: view,
+            creationMode: "update"
+        });
+        view.ui.add(sketch, "top-right");
+        // Define the renderer for the transportation layer
+        const roadrenderer = new SimpleRenderer({
+            symbol: new SimpleLineSymbol({
+                color: "red",
+                width: 3
+            })
+        });
+        // Define the renderer for the transportation layer
+        const RRrenderer = new SimpleRenderer({
+            symbol: new SimpleLineSymbol({
+                color: "black",
+                width: 3
+            })
+        });
+        // Define the renderer for the transportation layer
+        const pointRenderer = new SimpleRenderer({
+            symbol: new SimpleMarkerSymbol({
+                style: "square",
+                color: "blue",
+                size: "24px",  // pixels
+                outline: {  // autocasts as new SimpleLineSymbol()
+                    color: [ 255, 255, 0 ],
+                    width: 3  // points
+                }
+            })
+        });
+
+        // Add the FeatureLayer from the specified URL
+        const transportationLayer = new FeatureLayer({
+            url: "https://carto.nationalmap.gov/arcgis/rest/services/transportation/MapServer/9",
+            minScale: 100000,
+            maxScale: 0,
+            renderer: roadrenderer,
+            popupEnabled: true,
+            definitionExpression: "PRE_TYPE = 'INTERSTATE'"
+        });
+        map.add(transportationLayer);
+        // Add the FeatureLayer from the specified URL
+        const railroadLayer = new FeatureLayer({
+            url: "https://carto.nationalmap.gov/arcgis/rest/services/transportation/MapServer/38",
+            minScale: 100000,
+            maxScale: 0,
+            renderer: RRrenderer
+        });
+        map.add(railroadLayer);
+
+        // Add the FeatureLayer from the specified URL
+        const airportLayer = new FeatureLayer({
+            url: "https://carto.nationalmap.gov/arcgis/rest/services/transportation/MapServer/27",
+            minScale: 100000,
+            maxScale: 0,
+            renderer: pointRenderer
+        });
+        map.add(airportLayer);
+
+        // Function to add graphics to the layer
+        function addGraphics(features) {
+            graphicsLayer.removeAll();
+            features.forEach(feature => {
+                const fillColor = [255, 255, 0, 0.25];
+                const symbol = new SimpleFillSymbol({
+                    color: fillColor,
+                    outline: {
+                        color: "black",
+                        width: 1
+                    }
+                });
+                const graphic = new Graphic({
+                    geometry: feature.geometry,
+                    symbol: symbol,
+                    attributes: feature.attributes
+                });
+                graphicsLayer.add(graphic);
+            });
+        }
+
+        // Function to generate hexbins
+        function generateHexbins(polygon, resolution) {
+            //console.log(polygon)
+            const coordinates = polygon
+            //console.log(coordinates)
+            const hexbinFeatures = h3.polygonToCells(coordinates, resolution, true);
+            const features = hexbinFeatures.map(h => ({
+                geometry: new Polygon({
+                    rings: [h3.cellToBoundary(h, true)]
+                }),
+                attributes: h.properties
+            }));
+            addGraphics(features);
+        }
+        // near analysis function - with feature name added
+        function nearAnalysisFeatureName(promiseArray, queryInput, nearlayer, featurename, nearAttname,nearfeatname, graphicInput) {
+            promiseArray.push(nearlayer.queryFeatures(queryInput).then(roadResults => {
+                var graphicWMgeo=webMercatorUtils.geographicToWebMercator(graphicInput.geometry);
+                let minDistanceRoad = Infinity;
+                roadResults.features.forEach(f => {
+                    let roadname = f.attributes.featurename
+                    nearestRoad = geometryEngine.distance(graphicWMgeo, f.geometry, "miles");
+                    if (nearestRoad < minDistanceRoad) {
+                        minDistanceRoad = nearestRoad;
+                    }
+                    graphicInput.setAttribute(nearfeatname,roadname);
+                    graphicInput.setAttribute(nearAttname,minDistanceRoad);
+                    
+                });
+                
+                
+                
+            }));
+        };
+        // near analysis function - without feature name added
+        function nearAnalysisNoFeat(promiseArray, queryInput, nearlayer, nearAttname, graphicInput) {
+            promiseArray.push(nearlayer.queryFeatures(queryInput).then(roadResults => {
+                var graphicWMgeo=webMercatorUtils.geographicToWebMercator(graphicInput.geometry);
+                let minDistanceRoad = Infinity;
+                roadResults.features.forEach(f => {
+                    nearestRoad = geometryEngine.distance(graphicWMgeo, f.geometry, "miles");
+                    if (nearestRoad < minDistanceRoad) {
+                        minDistanceRoad = nearestRoad;
+                    }
+                    
+                });
+                graphicInput.setAttribute(nearAttname,minDistanceRoad);
+                //console.log(graphicInput)
+            }));
+        };
+
+
+
+        // Event listener for hexbin generation button
+        document.getElementById("generateHexbinsButton").addEventListener("click", function() {
+            const resolutionInput = document.getElementById("resolutionInput").value;
+            const resolution = parseInt(resolutionInput);
+            const mode = document.getElementById("selectMode").value;
+
+            if (mode === "extent") {
+                const extent = webMercatorUtils.webMercatorToGeographic(view.extent);
+                
+                const bboxPolygon = turf.bboxPolygon([extent.xmin, extent.ymin, extent.xmax, extent.ymax]);
+                console.log(bboxPolygon.geometry.coordinates[0])
+                generateHexbins(bboxPolygon.geometry.coordinates[0], resolution);
+            } else if (mode === "polygon") {
+                const graphics = sketchLayer.graphics.toArray();
+                var polygons = [];
+                if (graphics.length > 0) {
+                    const polygon = sketchLayer.graphics;
+                    var polygons = [];
+                    var i=0;
+                    polygon.forEach(poly =>{
+                        polyJSON=poly.toJSON()                     
+                        polygons[i] = new Polygon(new SpatialReference(polyJSON.geometry.spatialReference.wkid));
+                        polygons[i].rings = polyJSON.geometry.rings;
+                        i=i+1                   
+                    });
+                    //convert from web mercator to WGS
+                    geoPolyFinal = webMercatorUtils.webMercatorToGeographic(polygons[0])
+
+                    const geoPoly = turf.polygon(geoPolyFinal)
+                    //console.log(geoPoly.geometry.coordinates.rings[0])
+                    generateHexbins(geoPoly.geometry.coordinates.rings[0], resolution);
+                
+                }
+                } else {
+                    alert("Please draw a polygon to generate hexbins.");
+                }
+            
+        });
+
+        // Tab switching logic
+        const tabs = document.querySelectorAll(".tab-link");
+        const contents = document.querySelectorAll(".tab-content");
+
+        tabs.forEach(tab => {
+            tab.addEventListener("click", function() {
+                tabs.forEach(t => t.classList.remove("active"));
+                contents.forEach(c => c.classList.remove("active"));
+                tab.classList.add("active");
+                document.getElementById(tab.getAttribute("data-tab")).classList.add("active");
+            });
+        });
+
+        document.getElementById("calculateDistanceButton").addEventListener("click", function() {
+            //need to set envelope https://developers.arcgis.com/javascript/latest/api-reference/esri-rest-support-Query.html
+            var railInput = document.getElementById("railInput").value;
+            var railval = parseInt(railInput);
+            var roadInput = document.getElementById("roadInput").value;
+            var roadval = parseInt(roadInput);
+            var airportInput = document.getElementById("airportInput").value;
+            var airportval = parseInt(airportInput);
+
+            const queryRoad = new Query({
+                where: "PRE_TYPE = 'INTERSTATE'",
+                returnGeometry: true,
+                outFields: ["*"],
+                distance: "10",
+                units: "miles",
+                geometry: view.extent,
+                spatialRelationship: "intersects"
+            });
+            const queryGeneric = new Query({
+                where: "1=1",
+                returnGeometry: true,
+                outFields: ["*"],
+                distance: "10",
+                units: "miles",
+                geometry: view.extent,
+                spatialRelationship: "intersects"
+            });
+
+            // feature layers
+            /*const roadLayer = new FeatureLayer({
+                url: "https://carto.nationalmap.gov/arcgis/rest/services/transportation/MapServer/9"
+            });
+
+            const railLayer = new FeatureLayer({
+                url: "https://carto.nationalmap.gov/arcgis/rest/services/transportation/MapServer/38"
+            });
+            const airportLayer = new FeatureLayer({
+                url: "https://carto.nationalmap.gov/arcgis/rest/services/transportation/MapServer/27"
+            });*/
+            var promisesloader = [];
+            let i=0
+            graphicsLayer.graphics.forEach(graphic => {
+                loader.active = true
+                //loader.text = "Near Analysis";
+                //graphic.setAttribute("distanceToRail",0);
+                //graphic.setAttribute("distanceToRoad",0);
+                var promises = [];
+                nearAnalysisFeatureName(promises, queryRoad, transportationLayer,"PRIME_NAME", "distanceToRoad","roadName",graphic);
+                nearAnalysisNoFeat(promises, queryGeneric, railroadLayer, "distanceToRail", graphic);
+                nearAnalysisNoFeat(promises, queryGeneric, airportLayer, "distanceToAirport", graphic);
+                console.log(promises)
+                promiseUtils.eachAlways(promises).then(function() {
+                    i=i+promises.length
+                    var fillColor = (graphic.attributes.distanceToRail < railval && graphic.attributes.distanceToRoad < roadval&& graphic.attributes.distanceToAirport < airportval) ? "green" : "red";
+                    graphic.symbol.color = fillColor;
+                    //turn off loader when number of promises * graphics is done running
+                    if (graphicsLayer.graphics.length*promises.length == i) {
+                        loader.active = false
+                    }
+                    
+                    console.log(i)
+                    
+                })
+                
+        });
+          
+    });
+        //Use the threshold values to update the symbology of the hex layers
+        document.getElementById("updateRiskButton").addEventListener("click", function() {
+            var railInput = document.getElementById("railInput").value;
+            var railval = parseFloat(railInput);
+            var roadInput = document.getElementById("roadInput").value;
+            var roadval = parseFloat(roadInput);
+            var airportInput = document.getElementById("airportInput").value;
+            var airportval = parseFloat(airportInput);
+            i=0
+            graphicsLayer.graphics.forEach(graphic => {
+                graphic.setAttribute("distanceToRail",graphic.attributes.distanceToRail);
+                graphic.setAttribute("distanceToRoad",graphic.attributes.distanceToRoad);
+                graphic.setAttribute("distanceToAirport",graphic.attributes.distanceToAirport);
+                var symbol = graphic.symbol
+                var fillColor = (graphic.attributes.distanceToRail < railval && graphic.attributes.distanceToRoad < roadval && graphic.attributes.distanceToAirport < airportval) ? "green" : "red";
+                symbol.color=fillColor;
+                graphic.symbol = symbol
+                //i=1+1
+
+            });
+        });
+        // Create new instance of the Measurement widget
+        const measurement = new Measurement();
+
+        // Create new instance of the Legend widget
+        const legend = new Legend({
+            layerInfos: [{
+              layer: graphicsLayer,
+              title: "Hexbins"
+            }]
+          });
+
+        // Set-up event handlers for buttons and click events
+        //const switchButton = document.getElementById("switch-btn");
+        const distanceButton = document.getElementById('distancemeas');
+        const areaButton = document.getElementById('area');
+        const clearButton = document.getElementById('clear');
+
+        distanceButton.addEventListener("click", () => {
+            distanceMeasurement();
+        });
+        areaButton.addEventListener("click", () => {
+            areaMeasurement();
+        });
+        clearButton.addEventListener("click", () => {
+            clearMeasurements();
+        });
+
+        // Call the loadView() function for the initial view
+        loadView();
+
+        // The loadView() function to define the view for the widgets and div
+        function loadView() {
+            activeView.set({
+                container: "viewDiv"
+        });
+        // Add the appropriate measurement UI to the bottom-right when activated
+        activeView.ui.add(measurement, "bottom-right");
+        // Add the legend to the bottom left
+        activeView.ui.add(legend, "bottom-left");
+        // Set the views for the widgets
+        measurement.view = activeView;
+        legend.view = activeView;
+        }
+        // Call the appropriate DistanceMeasurement2D or DirectLineMeasurement3D
+        function distanceMeasurement() {
+            console.log('here')
+            const type = activeView.type;
+            measurement.activeTool = type.toUpperCase() === "2D" ? "distance" : "direct-line";
+            distanceButton.classList.add("active");
+            areaButton.classList.remove("active");
+        }
+
+        // Call the appropriate AreaMeasurement2D or AreaMeasurement3D
+        function areaMeasurement() {
+            measurement.activeTool = "area";
+            distanceButton.classList.remove("active");
+            areaButton.classList.add("active");
+        }
+
+        // Clears all measurements
+        function clearMeasurements() {
+            distanceButton.classList.remove("active");
+            areaButton.classList.remove("active");
+            measurement.clear();
+        }
+        // Clears all measurements
+        function clearMeasurements() {
+            distanceButton.classList.remove("active");
+            areaButton.classList.remove("active");
+            measurement.clear();
+          }
+        // watch for map update
+        /*reactiveUtils.watch(
+            // getValue function
+            () => view.updating,
+            // callback
+            (updating) => {
+              console.log(updating)
+              loader.active = updating;
+              loader.text = "loading layers";
+            });*/
+        //////
+    });
+</script>
+</body>
+</html>
